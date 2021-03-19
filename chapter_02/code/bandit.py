@@ -1,15 +1,18 @@
 import numpy as np
-from numpy.random import default_rng
+from numba import int32, float64, boolean, njit
+from numba.experimental import jitclass
 
-rng = default_rng()
 
-
+@njit
 def random_walk(t: int, k: int, sigma: float = 0.01):
     """Perform k random walks of t time steps"""
     """Assume the initial position to be x=0"""
 
     # Perform random walk (cumulative sum of random steps)
-    return np.cumsum(rng.normal(0, sigma, size=(t, k)), axis=0)
+    random_matrix = np.zeros(shape=(t, k), dtype=float64)
+    for i in range(k):
+        random_matrix[:, i] = np.cumsum(sigma * np.random.randn(t))
+    return random_matrix
 
 
 class BanditMixin:
@@ -19,7 +22,7 @@ class BanditMixin:
         """Perform Action"""
         # The reward for action k is drawn from a normal distribution of mean q(k)
         #  and variance 1
-        return rng.normal(self.action_values[action], 1)
+        return self.action_values[action] + np.random.randn()
 
     def update_reward(self, action):
         """Update sample average reward"""
@@ -37,7 +40,7 @@ class BanditMixin:
 
     def choose_action(self):
         """Choose next action (greedy-eps)"""
-        if rng.uniform() >= self.eps:
+        if np.random.rand() >= self.eps:
             # Go greedy
             return np.argmax(self.avg_rewards)
         else:
@@ -46,7 +49,7 @@ class BanditMixin:
 
     def train(self, steps):
         """Train the agent"""
-        output = np.zeros(shape=(steps, 3))
+        output = np.zeros(shape=(steps, 3), dtype=float64)
         for step in range(steps):
             self.steps += 1
             # Choose an action
@@ -65,6 +68,18 @@ class BanditMixin:
         return output[:, 0], output[:, 1], output[:, 2]
 
 
+spec = [
+    ("k", int32),
+    ("stationary", boolean),
+    ("steps", int32),
+    ("last_reward", float64),
+    ("action_counter", int32[:]),
+    ("avg_rewards", float64[:]),
+    ("action_values", float64[:]),
+    ("optimal_action", int32),
+]
+
+
 class MultiArmedBandit:
     """General class for a bandit problem"""
 
@@ -81,7 +96,7 @@ class MultiArmedBandit:
         self.last_reward = 0
 
         # Counters and avg rewards
-        self.action_counter = np.zeros(self.k)
+        self.action_counter = np.zeros(self.k, dtype=int32)
         self.avg_rewards = self.set_initial_rewards(self.k)
 
         # Action Values and Optimal Action
@@ -94,16 +109,17 @@ class MultiArmedBandit:
         """Set initial action values"""
         if self.stationary:
             # Return a normal vector of size k
-            return rng.standard_normal(self.k)
+            return np.random.randn(self.k)
         else:
             # Return a unitary vector of size k
-            return np.ones(shape=(self.k,))
+            return np.ones(shape=(self.k,), dtype=float64)
 
     def test_action_values(self, t):
         """Test trajectory of action values for a stationary problem"""
         if self.stationary:
-            # Return a normally distributed matrix of size k and length t
-            return rng.normal(loc=self.action_values, size=(t, self.k))
+            # Return a normally distributed matrix with mean q(k) and variance 1
+            # of size k and length t
+            return self.action_values + np.random.randn(t, self.k)
         else:
             # Perform a random walk with initial values being the action values
             return self.action_values + random_walk(t, self.k)
@@ -114,21 +130,27 @@ class MultiArmedBandit:
         if not self.stationary:
             # Perform the random walk by adding a normally distributed vector of size k
             #  to the action values
-            self.action_values += rng.normal(0, 0.01, size=(self.k,))
+            self.action_values += 0.01 * np.random.randn(self.k)
             self.optimal_action = np.argmax(self.action_values)
         return self
 
 
+spec_sa = [("eps", float64)]
+
+
+@jitclass(spec + spec_sa)
 class SampleAverage(MultiArmedBandit, BanditMixin):
     """Class for sample average action-value method"""
 
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+
     def __init__(self, k, eps=0.1, stationary=True):
-        super().__init__(k, stationary)
+        self.__init__MultiArmedBandit(k, stationary)
         self.eps = eps
 
     def set_initial_rewards(self, k):
         # Initial rewards are 0
-        return np.zeros(k)
+        return np.zeros(self.k, dtype=float64)
 
     def update_learning_rate(self, action):
         # Learning rate is given by 1/n where n is the number a certain action has been
@@ -136,13 +158,24 @@ class SampleAverage(MultiArmedBandit, BanditMixin):
         return 1 / self.action_counter[action]
 
 
-class ConstantStepSize(SampleAverage):
+spec_cs = [("eps", float64), ("alpha", float64), ("o", float64)]
+
+
+@jitclass(spec + spec_cs)
+class ConstantStepSize(MultiArmedBandit, BanditMixin):
     """Class for sample average with constant step-size learning rate"""
 
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+
     def __init__(self, k, eps=0.1, stationary=True, alpha=0.1):
-        super().__init__(k, eps, stationary)
+        self.__init__MultiArmedBandit(k, stationary)
+        self.eps = eps
         self.alpha = alpha
         self.o = 0
+
+    def set_initial_rewards(self, k):
+        # Initial rewards are 0
+        return np.zeros(k, dtype=float64)
 
     def update_learning_rate(self, action):
         # Use unbiased trick to update alpha for constant step-size learning
