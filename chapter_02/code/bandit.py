@@ -255,7 +255,7 @@ class WeightedUCBAgent(MultiArmedBandit, UCBMixin):
 
     __init__MultiArmedBandit = MultiArmedBandit.__init__
     reset__MultiArmedBandit = MultiArmedBandit.reset
-    update_reward__BanditMixin = BanditMixin.update_reward
+    update_reward__UCBMixin = UCBMixin.update_reward
 
     def __init__(self, k, c=1, weight=0.999, init_action_val=0, stationary=True):
         self.c = c
@@ -282,7 +282,7 @@ class WeightedUCBAgent(MultiArmedBandit, UCBMixin):
         # Discount all weighted weighted counters
         self.weighted_counter *= self.weight
         # Perform normal update of the estimated reward
-        self.update_reward__BanditMixin(action)
+        self.update_reward__UCBMixin(action)
         return self
 
     def update_learning_rate(self, action):
@@ -405,3 +405,66 @@ class WeightedGradientBanditAgent(MultiArmedBandit, GradientBanditMixin):
         for constant step-size learning"""
         self.o = self.o + self.weight * (1 - self.o)
         return self.weight / self.o
+
+
+# Thomson Sampling family
+class ThomsonSamplingMixin(BanditMixin):
+    """General purpose methods for a Thomson Sampling method"""
+
+    update_reward__BanditMixin = BanditMixin.update_reward
+
+    def set_initial_rewards(self):
+        """Set the initial rewards"""
+        # Initial rewards are `init_action_val`
+        return self.init_action_val * np.ones(self.k, dtype=np.float64)
+
+    def update_reward(self, action):
+        """Update sample average reward"""
+        self.update_reward__BanditMixin(action)
+        self.update_posterior(action)
+
+    def choose_action(self):
+        """Choose next action (Thomson Bandit)"""
+        """Sample a value from the the posterior normal distribution.
+         Return the max index"""
+        return np.argmax((np.random.randn() / np.sqrt(self.tau)) + self.mu)
+
+
+spec_th = [
+    ("init_action_val", float64),
+    ("mu", float64[:]),
+    ("tau", float64[:]),
+]
+
+
+@jitclass(spec + spec_th)
+class ThomsonSamplingAgent(MultiArmedBandit, ThomsonSamplingMixin):
+    """Class for Thomson Sampling method"""
+
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+    reset__MultiArmedBandit = MultiArmedBandit.reset
+
+    def __init__(self, k, init_action_val=0, stationary=True):
+        self.init_action_val = init_action_val
+        self.__init__MultiArmedBandit(k, stationary)
+
+    def reset(self):
+        """Define Bandit properties"""
+        self.reset__MultiArmedBandit()
+        self.mu = np.zeros(self.k, dtype=np.float64)
+        self.tau = 0.0001 * np.ones(self.k, dtype=np.float64)
+        return self
+
+    def update_posterior(self, action):
+        """Update posterior distribution"""
+        mu = self.mu[action]
+        tau = self.tau[action]
+        self.mu[action] = ((mu * tau) + self.last_reward) / (1 + tau)
+        self.tau[action] += 1
+
+        return self
+
+    def update_learning_rate(self, action):
+        """Update learning rate for action `action`. Learning rate is given by 1/n
+        where n is the number a certain action has been already selected"""
+        return 1 / self.action_counter[action]
