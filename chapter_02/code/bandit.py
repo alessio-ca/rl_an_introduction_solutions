@@ -407,9 +407,9 @@ class WeightedGradientBanditAgent(MultiArmedBandit, GradientBanditMixin):
         return self.weight / self.o
 
 
-# Thomson Sampling family
-class ThomsonSamplingMixin(BanditMixin):
-    """General purpose methods for a Thomson Sampling method"""
+# Thompson Sampling family
+class ThompsonSamplingMixin(BanditMixin):
+    """General purpose methods for a Thompson Sampling method"""
 
     update_reward__BanditMixin = BanditMixin.update_reward
 
@@ -438,7 +438,7 @@ spec_th = [
 
 
 @jitclass(spec + spec_th)
-class ThomsonSamplingAgent(MultiArmedBandit, ThomsonSamplingMixin):
+class ThompsonSamplingAgent(MultiArmedBandit, ThompsonSamplingMixin):
     """Class for Thomson Sampling method"""
 
     __init__MultiArmedBandit = MultiArmedBandit.__init__
