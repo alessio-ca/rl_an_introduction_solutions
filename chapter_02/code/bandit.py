@@ -126,22 +126,7 @@ class MultiArmedBandit:
 
 
 # Greedy-Epsilon Family
-
-spec_sa = [("eps", float64), ("init_action_val", float64)]
-
-
-@jitclass(spec + spec_sa)
-class GreedyEpsAgent(MultiArmedBandit, BanditMixin):
-    """Class for sample average action-value method,
-    with eps-greedy action selection"""
-
-    __init__MultiArmedBandit = MultiArmedBandit.__init__
-
-    def __init__(self, k, eps=0.1, init_action_val=0, stationary=True):
-        self.eps = eps
-        self.init_action_val = init_action_val
-        self.__init__MultiArmedBandit(k, stationary)
-
+class GreedyEpsMixin(BanditMixin):
     def set_initial_rewards(self):
         """Set the initial rewards"""
         # Initial rewards are `init_action_val`
@@ -155,6 +140,22 @@ class GreedyEpsAgent(MultiArmedBandit, BanditMixin):
         else:
             # Return random action
             return np.random.choice(self.k)
+
+
+spec_sa = [("eps", float64), ("init_action_val", float64)]
+
+
+@jitclass(spec + spec_sa)
+class GreedyEpsAgent(MultiArmedBandit, GreedyEpsMixin):
+    """Class for sample average action-value method,
+    with eps-greedy action selection"""
+
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+
+    def __init__(self, k, eps=0.1, init_action_val=0, stationary=True):
+        self.eps = eps
+        self.init_action_val = init_action_val
+        self.__init__MultiArmedBandit(k, stationary)
 
     def update_learning_rate(self, action):
         """Update learning rate for action `action`. Learning rate is given by 1/n
@@ -171,7 +172,7 @@ spec_cs = [
 
 
 @jitclass(spec + spec_cs)
-class ConstantStepSizeGreedyEpsAgent(MultiArmedBandit, BanditMixin):
+class ConstantStepSizeGreedyEpsAgent(MultiArmedBandit, GreedyEpsMixin):
     """Class for sample average with constant step-size learning rate,
     with eps-greedy action selection"""
 
@@ -189,20 +190,6 @@ class ConstantStepSizeGreedyEpsAgent(MultiArmedBandit, BanditMixin):
         self.reset__MultiArmedBandit()
         self.o = 0
 
-    def set_initial_rewards(self):
-        """Set the initial rewards"""
-        # Initial rewards are `init_action_val`
-        return self.init_action_val * np.ones(self.k, dtype=np.float64)
-
-    def choose_action(self):
-        """Choose next action (greedy-eps)"""
-        if np.random.rand() >= self.eps:
-            # Go greedy
-            return np.argmax(self.avg_rewards)
-        else:
-            # Return random action
-            return np.random.choice(self.k)
-
     def update_learning_rate(self, action):
         """Update learning rate for action `action`. Use unbiased trick to update alpha
         for constant step-size learning"""
@@ -211,25 +198,7 @@ class ConstantStepSizeGreedyEpsAgent(MultiArmedBandit, BanditMixin):
 
 
 # UCB family
-
-spec_ucb = [
-    ("c", float64),
-    ("init_action_val", float64),
-]
-
-
-@jitclass(spec + spec_ucb)
-class UCBAgent(MultiArmedBandit, BanditMixin):
-    """Class for sample average action-value method,
-    with Upper-Confidence-Bound action selection"""
-
-    __init__MultiArmedBandit = MultiArmedBandit.__init__
-
-    def __init__(self, k, c=1, init_action_val=0, stationary=True):
-        self.c = c
-        self.init_action_val = init_action_val
-        self.__init__MultiArmedBandit(k, stationary)
-
+class UCBMixin(BanditMixin):
     def set_initial_rewards(self):
         """Set the initial rewards"""
         # Initial rewards are `init_action_val`
@@ -241,6 +210,25 @@ class UCBAgent(MultiArmedBandit, BanditMixin):
             self.avg_rewards
             + self.c * np.sqrt(np.log(self.steps) / self.action_counter)
         )
+
+
+spec_ucb = [
+    ("c", float64),
+    ("init_action_val", float64),
+]
+
+
+@jitclass(spec + spec_ucb)
+class UCBAgent(MultiArmedBandit, UCBMixin):
+    """Class for sample average action-value method,
+    with Upper-Confidence-Bound action selection"""
+
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+
+    def __init__(self, k, c=1, init_action_val=0, stationary=True):
+        self.c = c
+        self.init_action_val = init_action_val
+        self.__init__MultiArmedBandit(k, stationary)
 
     def update_learning_rate(self, action):
         """Update learning rate for action `action`. Learning rate is given by 1/n
@@ -257,7 +245,7 @@ spec_wucb = [
 
 
 @jitclass(spec + spec_wucb)
-class WeightedUCBAgent(MultiArmedBandit, BanditMixin):
+class WeightedUCBAgent(MultiArmedBandit, UCBMixin):
     """Class for sample average action-value method with discount,
     with Upper-Confidence-Bound action selection"""
 
@@ -275,11 +263,6 @@ class WeightedUCBAgent(MultiArmedBandit, BanditMixin):
         """Define Bandit properties"""
         self.reset__MultiArmedBandit()
         self.weighted_counter = np.zeros(self.k, dtype=np.float64)
-
-    def set_initial_rewards(self):
-        """Set the initial rewards"""
-        # Initial rewards are `init_action_val`
-        return self.init_action_val * np.ones(self.k, dtype=np.float64)
 
     def choose_action(self):
         """Choose next action (UCB)"""
@@ -306,40 +289,12 @@ class WeightedUCBAgent(MultiArmedBandit, BanditMixin):
         return 1 / self.weighted_counter[action]
 
 
-spec_gba = [
-    ("alpha", float64),
-    ("o", float64),
-    ("action_preferences", float64[:]),
-    ("probabilities", float64[:]),
-]
-
 # Gradient Bandit family
-
-
-@jitclass(spec + spec_gba)
-class GradientBanditAgent(MultiArmedBandit, BanditMixin):
-    """Class for Gradient Bandit method"""
-
-    __init__MultiArmedBandit = MultiArmedBandit.__init__
-    reset__MultiArmedBandit = MultiArmedBandit.reset
-
-    def __init__(self, k, alpha=0.1, stationary=True):
-        self.alpha = alpha
-        self.__init__MultiArmedBandit(k, stationary)
-
-    def reset(self):
-        """Define Bandit properties"""
-        self.reset__MultiArmedBandit()
-        self.o = 0
-        self.action_preferences = np.ones(self.k, dtype=np.float64)
-        self.probabilities = self.compute_probabilities()
-
-        return self
-
+class GradientBanditMixin(BanditMixin):
     def set_initial_rewards(self):
         """Set the initial rewards"""
-        # Initial rewards are 0
-        return np.zeros(self.k, dtype=np.float64)
+        # Initial rewards are `init_action_val`
+        return self.init_action_val * np.ones(self.k, dtype=np.float64)
 
     def compute_probabilities(self):
         """Compute action probabilities"""
@@ -371,6 +326,34 @@ class GradientBanditAgent(MultiArmedBandit, BanditMixin):
         # Specific update for action `action` after selection
         update[action] += self.alpha * (self.last_reward - self.avg_rewards[action])
         self.action_preferences *= np.exp(update)
+        return self
+
+
+spec_gba = [
+    ("alpha", float64),
+    ("init_action_val", float64),
+    ("action_preferences", float64[:]),
+    ("probabilities", float64[:]),
+]
+
+
+@jitclass(spec + spec_gba)
+class GradientBanditAgent(MultiArmedBandit, GradientBanditMixin):
+    """Class for Gradient Bandit method"""
+
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+    reset__MultiArmedBandit = MultiArmedBandit.reset
+
+    def __init__(self, k, alpha=0.1, init_action_val=0, stationary=True):
+        self.alpha = alpha
+        self.init_action_val = init_action_val
+        self.__init__MultiArmedBandit(k, stationary)
+
+    def reset(self):
+        """Define Bandit properties"""
+        self.reset__MultiArmedBandit()
+        self.action_preferences = np.ones(self.k, dtype=np.float64)
+        self.probabilities = self.compute_probabilities()
         return self
 
     def update_learning_rate(self):
@@ -383,21 +366,23 @@ spec_wgba = [
     ("alpha", float64),
     ("weight", float64),
     ("o", float64),
+    ("init_action_val", float64),
     ("action_preferences", float64[:]),
     ("probabilities", float64[:]),
 ]
 
 
 @jitclass(spec + spec_wgba)
-class WeightedGradientBanditAgent(MultiArmedBandit, BanditMixin):
+class WeightedGradientBanditAgent(MultiArmedBandit, GradientBanditMixin):
     """Class for Gradient Bandit method, with weighted estimate reward"""
 
     __init__MultiArmedBandit = MultiArmedBandit.__init__
     reset__MultiArmedBandit = MultiArmedBandit.reset
 
-    def __init__(self, k, alpha=0.1, weight=0.1, stationary=True):
+    def __init__(self, k, alpha=0.1, weight=0.1, init_action_val=0, stationary=True):
         self.alpha = alpha
         self.weight = weight
+        self.init_action_val = init_action_val
         self.__init__MultiArmedBandit(k, stationary)
 
     def reset(self):
@@ -406,44 +391,6 @@ class WeightedGradientBanditAgent(MultiArmedBandit, BanditMixin):
         self.o = 0
         self.action_preferences = np.ones(self.k, dtype=np.float64)
         self.probabilities = self.compute_probabilities()
-
-        return self
-
-    def set_initial_rewards(self):
-        """Set the initial rewards"""
-        # Initial rewards are 0
-        return np.zeros(self.k, dtype=np.float64)
-
-    def compute_probabilities(self):
-        """Compute action probabilities"""
-        return self.action_preferences / self.action_preferences.sum()
-
-    def choose_action(self):
-        """Choose next action (Gradient Bandit)"""
-        self.probabilities = self.compute_probabilities()
-        return np.argmax(np.random.multinomial(1, self.probabilities))
-
-    def update_reward(self, action):
-        """Update sample average reward (for Bandit Algorithm)"""
-        # Compute reward of the action
-        self.last_reward = self.reward(action)
-        # Update alpha
-        alpha = self.update_learning_rate()
-        # Update average reward for the action
-        self.avg_rewards += alpha * (self.last_reward - self.avg_rewards)
-        # Update the action preferences
-        self.update_action_preferences(action)
-        return self
-
-    def update_action_preferences(self, action):
-        """Update action preferences"""
-        # General update
-        update = (
-            -self.alpha * (self.last_reward - self.avg_rewards) * self.probabilities
-        )
-        # Specific update for action `action` after selection
-        update[action] += self.alpha * (self.last_reward - self.avg_rewards[action])
-        self.action_preferences *= np.exp(update)
 
         return self
 
