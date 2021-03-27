@@ -12,6 +12,7 @@ numpy = "^1.20.1"
 matplotlib = "^3.3.4"
 numba = "^0.53.0"
 tqdm = "^4.59.0"
+scipy = "^1.6.2"
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"
