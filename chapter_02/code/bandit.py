@@ -127,6 +127,8 @@ class MultiArmedBandit:
 
 # Greedy-Epsilon Family
 class GreedyEpsMixin(BanditMixin):
+    """General purpose methods for a GreedyEps method"""
+
     def set_initial_rewards(self):
         """Set the initial rewards"""
         # Initial rewards are `init_action_val`
@@ -199,6 +201,8 @@ class ConstantStepSizeGreedyEpsAgent(MultiArmedBandit, GreedyEpsMixin):
 
 # UCB family
 class UCBMixin(BanditMixin):
+    """General purpose methods for a UCB method"""
+
     def set_initial_rewards(self):
         """Set the initial rewards"""
         # Initial rewards are `init_action_val`
@@ -291,6 +295,8 @@ class WeightedUCBAgent(MultiArmedBandit, UCBMixin):
 
 # Gradient Bandit family
 class GradientBanditMixin(BanditMixin):
+    """General purpose methods for a GradientBandit method"""
+
     def set_initial_rewards(self):
         """Set the initial rewards"""
         # Initial rewards are `init_action_val`
