@@ -434,18 +434,20 @@ spec_th = [
     ("init_action_val", float64),
     ("mu", float64[:]),
     ("tau", float64[:]),
+    ("tau_v", float64),
 ]
 
 
 @jitclass(spec + spec_th)
 class ThompsonSamplingAgent(MultiArmedBandit, ThompsonSamplingMixin):
-    """Class for Thomson Sampling method"""
+    """Class for Thomson Sampling method -- constant variance"""
 
     __init__MultiArmedBandit = MultiArmedBandit.__init__
     reset__MultiArmedBandit = MultiArmedBandit.reset
 
-    def __init__(self, k, init_action_val=0, stationary=True):
+    def __init__(self, k, tau_v=1, init_action_val=0, stationary=True):
         self.init_action_val = init_action_val
+        self.tau_v = tau_v
         self.__init__MultiArmedBandit(k, stationary)
 
     def reset(self):
@@ -459,8 +461,11 @@ class ThompsonSamplingAgent(MultiArmedBandit, ThompsonSamplingMixin):
         """Update posterior distribution"""
         mu = self.mu[action]
         tau = self.tau[action]
-        self.mu[action] = ((mu * tau) + self.last_reward) / (1 + tau)
-        self.tau[action] += 1
+
+        self.tau[action] += self.tau_v
+        self.mu[action] = ((mu * tau) + self.last_reward * self.tau_v) / self.tau[
+            action
+        ]
 
         return self
 
@@ -468,3 +473,65 @@ class ThompsonSamplingAgent(MultiArmedBandit, ThompsonSamplingMixin):
         """Update learning rate for action `action`. Learning rate is given by 1/n
         where n is the number a certain action has been already selected"""
         return 1 / self.action_counter[action]
+
+
+spec_wth = [
+    ("init_action_val", float64),
+    ("alpha", float64),
+    ("o", float64),
+    ("mu", float64[:]),
+    ("tau", float64[:]),
+    ("tau_v", float64),
+    ("gamma", float64),
+    ("mu_t", float64),
+    ("tau_t", float64),
+]
+
+
+@jitclass(spec + spec_wth)
+class WeightedThompsonSamplingAgent(MultiArmedBandit, ThompsonSamplingMixin):
+    """Class for Thomson Sampling method with discount"""
+
+    __init__MultiArmedBandit = MultiArmedBandit.__init__
+    reset__MultiArmedBandit = MultiArmedBandit.reset
+
+    def __init__(self, k, gamma=0.01, tau_v=1, init_action_val=0, stationary=True):
+        self.init_action_val = init_action_val
+        self.tau_v = tau_v
+        self.gamma = gamma
+        self.alpha = 0.1
+        self.__init__MultiArmedBandit(k, stationary)
+
+    def reset(self):
+        """Define Bandit properties"""
+        self.reset__MultiArmedBandit()
+        self.o = 0
+        self.mu = np.zeros(self.k, dtype=np.float64)
+        self.tau = 0.0001 * np.ones(self.k, dtype=np.float64)
+        self.mu_t = 0
+        self.tau_t = 0.0001
+        return self
+
+    def update_posterior(self, action):
+        """Update posterior distribution"""
+        # Create copy of prior
+        mu = self.mu.copy()
+        tau = self.tau.copy()
+
+        # General and action-specific update of tau
+        self.tau = (1 - self.gamma) * tau + self.gamma * self.tau_t
+        self.tau[action] += self.tau_v
+
+        # General and action-specific update of mu
+        self.mu = (
+            (1 - self.gamma) * (mu * tau) + self.gamma * (self.mu_t * self.tau_t)
+        ) / self.tau
+        self.mu[action] += (self.last_reward * self.tau_v) / self.tau[action]
+
+        return self
+
+    def update_learning_rate(self, action):
+        """Update learning rate for action `action`. Use unbiased trick to update alpha
+        for constant step-size learning"""
+        self.o = self.o + self.alpha * (1 - self.o)
+        return self.alpha / self.o
